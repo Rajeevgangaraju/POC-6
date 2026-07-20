@@ -1,11 +1,11 @@
 pipeline {
     agent any
     environment {
-        AWS_ACCOUNT_ID = 'YOUR_AWS_ACCOUNT_ID' 
+        AWS_ACCOUNT_ID = '567017110325' 
         AWS_DEFAULT_REGION = 'us-east-1' 
         IMAGE_REPO_NAME = 'prime-clone'
         IMAGE_TAG = "${BUILD_NUMBER}"
-        GITHUB_CRED_ID = 'github-token' // Jenkins credential ID for GitHub pushes
+        GITHUB_CRED_ID = 'github-token'
     }
     stages {
         stage('Code Checkout') {
@@ -13,28 +13,49 @@ pipeline {
                 checkout scm
             }
         }
+        
+        stage('Terraform Provision Infrastructure') {
+            steps {
+                dir('terraform') {
+                    // Jenkins initializes and spins up your network + EKS Cluster automatically
+                    sh 'terraform init'
+                    sh 'terraform apply --auto-approve'
+                }
+            }
+        }
+
+        stage('Establish Cluster Access') {
+            steps {
+                // Configures cluster context so subsequent deployment scripts run smoothly
+                sh "aws eks update-kubeconfig --region ${AWS_DEFAULT_REGION} --name prime-poc-cluster"
+            }
+        }
+
         stage('NPM Install & Build') {
             steps {
                 sh 'npm install'
                 sh 'npm run build'
             }
         }
+
         stage('SonarQube Quality Scan') {
             steps {
                 echo "Forwarding static code mapping to SonarQube..."
-                // Optional: add your configured sonar-scanner command here if using dynamic analytics tokens
             }
         }
+
         stage('Docker Build Container') {
             steps {
                 sh "docker build -t ${IMAGE_REPO_NAME}:${IMAGE_TAG} ."
             }
         }
+
         stage('Trivy Image Audit') {
             steps {
                 sh "trivy image --severity HIGH,CRITICAL --exit-code 0 ${IMAGE_REPO_NAME}:${IMAGE_TAG}"
             }
         }
+
         stage('Push Image to AWS ECR') {
             steps {
                 sh """
@@ -46,6 +67,7 @@ pipeline {
                 """
             }
         }
+
         stage('Update Git Manifest For GitOps') {
             steps {
                 withCredentials([usernamePassword(credentialsId: "${GITHUB_CRED_ID}", passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
