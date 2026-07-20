@@ -47,12 +47,13 @@ pipeline {
                     ${scannerHome}/bin/sonar-scanner \
                     -Dsonar.projectKey=prime-clone \
                     -Dsonar.sources=. \
-                    -Dsonar.host.url=http://<SONAR_IP>:9000 \
-                    -Dsonar.token=<TOKEN>
+                    -Dsonar.host.url=http://54.162.144.178/9000 \
+                    -Dsonar.token=sqa_3a37a530b57e8d697b6f190a9598f0b64e1ec9f4
                     """
                 }
             }
         }
+
 
         stage('Docker Build Container') {
             steps {
