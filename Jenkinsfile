@@ -88,37 +88,38 @@ pipeline {
 
         stage('Deploy GitOps & Helm Monitoring') {
             steps {
-                sh """
-                # 1. Provide EKS cluster node permissions to read container images from ECR
-                NODE_ROLE=\$(aws iam list-roles --query "Roles[?contains(RoleName, 'monitoring_node')].RoleName" --output text)
-                aws iam attach-role-policy --role-name \$NODE_ROLE --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly || true
-
-                # 2. Deploy ArgoCD Engine Infrastructure Natively
+                sh '''
+                NODE_ROLE=$(aws iam list-roles --query "Roles[?contains(RoleName, 'monitoring_node')].RoleName" --output text)
+        
+                aws iam attach-role-policy \
+                  --role-name $NODE_ROLE \
+                  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly || true
+        
                 kubectl create namespace argocd || true
-                
-                # FIXED: Added the complete verified raw file pathway manifest endpoint
-                kubectl apply -n argocd -f https://githubusercontent.com
-                
-                kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort"}}'
-
-                # 3. Trigger Application Synchronization manifest loop
+        
+                kubectl apply -n argocd \
+                  -f https://raw.githubusercontent.com/argoproj/argo-cd/stable/manifests/install.yaml
+        
+                kubectl patch svc argocd-server -n argocd \
+                  -p '{"spec":{"type":"NodePort"}}'
+        
                 kubectl apply -f k8s/argocd-app.yaml
-
-                # 4. Provision Prometheus + Grafana cluster metrics stack via Helm
-                helm repo add prometheus-community https://github.io || true
+        
+                helm repo add prometheus-community \
+                  https://prometheus-community.github.io/helm-charts || true
+        
                 helm repo update
+        
                 kubectl create namespace monitoring || true
-                
-                # Limits and controls memory allocations to fit exactly inside single-node computing parameters
+        
                 helm upgrade --install kube-stack prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --set prometheus.prometheusSpec.resources.requests.memory=400Mi \
                   --set prometheus.prometheusSpec.resources.limits.memory=1200Mi \
                   --set grafana.service.type=NodePort
-                """
+                '''
             }
-        }
-
+}
 
         stage('Display Live Entry Details') {
             steps {
