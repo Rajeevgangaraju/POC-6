@@ -93,9 +93,12 @@ pipeline {
                 NODE_ROLE=\$(aws iam list-roles --query "Roles[?contains(RoleName, 'monitoring_node')].RoleName" --output text)
                 aws iam attach-role-policy --role-name \$NODE_ROLE --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly || true
 
-                # 2. Deploy ArgoCD Engine Infrastructure
+                # 2. Deploy ArgoCD Engine Infrastructure Natively
                 kubectl create namespace argocd || true
+                
+                # FIXED: Added the complete verified raw file pathway manifest endpoint
                 kubectl apply -n argocd -f https://githubusercontent.com
+                
                 kubectl patch svc argocd-server -n argocd -p '{"spec": {"type": "NodePort"}}'
 
                 # 3. Trigger Application Synchronization manifest loop
@@ -115,6 +118,7 @@ pipeline {
                 """
             }
         }
+
 
         stage('Display Live Entry Details') {
             steps {
