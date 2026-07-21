@@ -88,50 +88,51 @@ pipeline {
         stage('Deploy GitOps & Helm Monitoring') {
             steps {
                 sh '''
-                # Grant EKS nodes permission to pull images from ECR
+                # 1. Grant EKS nodes permission to pull images from ECR
                 NODE_ROLE=$(aws iam list-roles --query "Roles[?contains(RoleName, 'monitoring_node')].RoleName" --output text)
         
                 aws iam attach-role-policy \
                   --role-name $NODE_ROLE \
                   --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly || true
         
-                # Create ArgoCD namespace
+                # 2. Create ArgoCD namespace
                 kubectl create namespace argocd || true
         
-                # Install ArgoCD using server-side apply
+                # 3. Install ArgoCD using server-side apply
                 kubectl apply --server-side -n argocd \
                   -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.7/manifests/install.yaml || true
         
-                # Wait for ArgoCD resources
+                # 4. Wait for ArgoCD resources to initialize completely
                 kubectl wait --for=condition=available deployment/argocd-server \
                   -n argocd --timeout=300s || true
         
-                # Expose ArgoCD UI
+                # 5. Expose ArgoCD UI via NodePort
                 kubectl patch svc argocd-server \
                   -n argocd \
                   -p '{"spec":{"type":"NodePort"}}' || true
         
-                # Deploy GitOps application
+                # 6. Deploy GitOps application
                 kubectl apply -f k8s/argocd-app.yaml || true
         
-                # Add Prometheus Helm repo
+                # 7. Add Prometheus Helm repo
                 helm repo add prometheus-community \
                   https://prometheus-community.github.io/helm-charts || true
-        
                 helm repo update
         
-                # Create monitoring namespace
+                # 8. Create monitoring namespace
                 kubectl create namespace monitoring || true
         
-                # Install Prometheus + Grafana inside the cluster node
+                # 9. Install Prometheus + Grafana inside the cluster node
+                # FIXED: Added explicit nodePort exposure for the Prometheus Expression Browser service
                 helm upgrade --install kube-stack \
                   prometheus-community/kube-prometheus-stack \
                   --namespace monitoring \
                   --set prometheus.prometheusSpec.resources.requests.memory=400Mi \
                   --set prometheus.prometheusSpec.resources.limits.memory=1200Mi \
-                  --set grafana.service.type=NodePort
+                  --set grafana.service.type=NodePort \
+                  --set prometheus.service.type=NodePort
         
-                # Verification
+                # 10. Verification logs
                 kubectl get pods -n argocd
                 kubectl get pods -n monitoring
                 kubectl get pods -n default
@@ -165,18 +166,28 @@ pipeline {
         
                 # 2. Extract service NodePorts natively from inside the EKS cluster configurations
                 ARGOCD_PORT=$(kubectl get svc argocd-server -n argocd -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
-                ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo)
                 GRAFANA_PORT=$(kubectl get svc kube-stack-grafana -n monitoring -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
+                PROMETHEUS_PORT=$(kubectl get svc kube-stack-prometheus -n monitoring -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
+                
+                # 3. Securely decode service authentication secrets
+                ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 --decode || echo "N/A")
                 GRAFANA_PASS=$(kubectl get secret -n monitoring kube-stack-grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 --decode || echo "N/A")
         
-                # 3. Print out clean, click-ready browser navigation routes
+                # 4. Print clean, click-ready browser navigation routes, usernames, and passwords
                 echo "🎬 Application URL : http://${NODE_IP}:32080"
+                echo "   👉 Authentication: None (Public Application Endpoint)"
+                echo "----------------------------------------------------------"
                 echo "🐙 ArgoCD URL      : http://${NODE_IP}:${ARGOCD_PORT}"
-                echo " ArgoCD Password    : ${ARGOCD_PASS}
+                echo "   👤 User Name     : admin"
+                # FIXED: Resolved broken double quotes structure causing compilation block failures
+                echo "   🔑 Password      : ${ARGOCD_PASS}"
+                echo "----------------------------------------------------------"
+                echo "🔥 Prometheus URL  : http://${NODE_IP}:${PROMETHEUS_PORT}"
+                echo "   👉 Authentication: None (Open Metrics Dashboard)"
+                echo "----------------------------------------------------------"
                 echo "📊 Grafana URL     : http://${NODE_IP}:${GRAFANA_PORT}"
-                echo "👤 Grafana User    : admin"
-                echo "🔑 Grafana Password: ${GRAFANA_PASS}"
-        
+                echo "   👤 User Name     : admin"
+                echo "   🔑 Password      : ${GRAFANA_PASS}"
                 echo "=========================================================="
                 '''
             }
