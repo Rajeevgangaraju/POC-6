@@ -12,9 +12,13 @@ module "vpc" {
   enable_nat_gateway = true
   single_nat_gateway = true
 
-  # CRITICAL FIX: Enables auto-assigning public IP addresses for the EKS subnets
+  # CRITICAL FIX: Forces public subnets to auto-assign public routing entries to EKS worker nodes
   map_public_ip_on_launch = true
 
-  public_subnet_tags = { "kubernetes.io/role/elb" = "1" }
-  private_subnet_tags = { "kubernetes.io/role/internal-elb" = "1" }
+  public_subnet_tags = {
+    "kubernetes.io/role/elb" = "1"
+  }
+  private_subnet_tags = {
+    "kubernetes.io/role/internal-elb" = "1"
+  }
 }
