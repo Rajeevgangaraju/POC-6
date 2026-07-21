@@ -118,7 +118,7 @@ pipeline {
                 NODE_IP=\$(kubectl get nodes -o wide | awk 'NR==2 {print \$7}')
                 ARGOCD_PORT=\$(kubectl get svc -n argocd argocd-server -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
                 GRAFANA_PORT=\$(kubectl get svc -n monitoring kube-stack-grafana -o jsonpath='{.spec.ports[?(@.name=="http")].nodePort}')
-                GRAFANA_PASS=\$(kubectl get secret -n monitoring kube-stack-grafana -o jsonpath=\x22{.data.admin-password}\x22 | base64 --decode)
+                GRAFANA_PASS=\$(kubectl get secret -n monitoring kube-stack-grafana -o jsonpath='{.data.admin-password}' | base64 --decode)
                 
                 echo "🎬 APPLICATION MAIN PAGE URL: http://\${NODE_IP}:32080"
                 echo "🐙 ARGOCD CONTROLLER BOARD:  http://\${NODE_IP}:\${ARGOCD_PORT}"
@@ -128,5 +128,6 @@ pipeline {
                 """
             }
         }
+
     }
 }
