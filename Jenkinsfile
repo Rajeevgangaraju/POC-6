@@ -165,12 +165,14 @@ pipeline {
         
                 # 2. Extract service NodePorts natively from inside the EKS cluster configurations
                 ARGOCD_PORT=$(kubectl get svc argocd-server -n argocd -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
+                ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d; echo)
                 GRAFANA_PORT=$(kubectl get svc kube-stack-grafana -n monitoring -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
                 GRAFANA_PASS=$(kubectl get secret -n monitoring kube-stack-grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 --decode || echo "N/A")
         
                 # 3. Print out clean, click-ready browser navigation routes
                 echo "🎬 Application URL : http://${NODE_IP}:32080"
                 echo "🐙 ArgoCD URL      : http://${NODE_IP}:${ARGOCD_PORT}"
+                echo " ArgoCD Password    : ${ARGOCD_PASS}
                 echo "📊 Grafana URL     : http://${NODE_IP}:${GRAFANA_PORT}"
                 echo "👤 Grafana User    : admin"
                 echo "🔑 Grafana Password: ${GRAFANA_PASS}"
