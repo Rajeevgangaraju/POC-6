@@ -30,7 +30,7 @@ pipeline {
             steps {
                 sh '''
                 aws eks update-kubeconfig \
-                --region ap-south-1 \
+                --region us-east-1 \
                 --name prime-poc-cluster
 
                 kubectl get nodes
