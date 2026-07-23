@@ -54,7 +54,7 @@ pipeline {
                         ${scannerHome}/bin/sonar-scanner \
                         -Dsonar.projectKey=prime-clone \
                         -Dsonar.sources=. \
-                        -Dsonar.host.url=http://54.162.144.178:9000 \
+                        -Dsonar.host.url=http://13.203.42.55:9000 \
                         -Dsonar.login=${SONAR_TOKEN}
                         """
                     }
