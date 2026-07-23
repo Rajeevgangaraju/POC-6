@@ -27,7 +27,7 @@ pipeline {
         stage('Establish Cluster Access') {
             steps {
                 // Connects your tools remote control context directly to the EKS cluster
-                sh "aws eks update-kubeconfig --region $us-east-1 --name prime-poc-cluster"
+                sh "aws eks update-kubeconfig --region us-east-1 --name prime-poc-cluster"
             }
         }
 
