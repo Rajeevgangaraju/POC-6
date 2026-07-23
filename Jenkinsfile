@@ -78,21 +78,21 @@ pipeline {
             }
         }
 
-        stage('Push Image to AWS ECR') {
-            steps {
-                sh """
-                aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
-        
-                docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
-        
-                docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
-        
-                docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
-        
-                docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
-                """
-            }
-        }
+        stage('Push Image To AWS ECR') {
+    steps {
+        sh '''
+        aws ecr get-login-password --region ap-south-1 | docker login --username AWS --password-stdin 566540245122.dkr.ecr.ap-south-1.amazonaws.com
+
+        docker tag prime-clone:${BUILD_NUMBER} 566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:latest
+
+        docker tag prime-clone:${BUILD_NUMBER} 566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:${BUILD_NUMBER}
+
+        docker push 566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:latest
+
+        docker push 566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:${BUILD_NUMBER}
+        '''
+    }
+}
 
         stage('Update Git Manifest For GitOps') {
             steps {
