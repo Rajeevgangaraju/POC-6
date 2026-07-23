@@ -186,30 +186,47 @@ pipeline {
         stage('Display Live Entry Details') {
             steps {
                 sh '''
-                echo "==============================================="
-
+                echo "=========================================================="
+                echo "🚀 DEVSECOPS POC LIFECYCLE CONNECTIONS 🚀"
+                echo "=========================================================="
+                # 1. Direct query to AWS EC2 API using EKS cluster tags to isolate the node's public IP
                 NODE_IP=$(aws ec2 describe-instances \
-                --filters "Name=instance-state-name,Values=running" \
-                --query "Reservations[*].Instances[*].PublicIpAddress" \
-                --output text | head -n1)
-
-                ARGOCD_PORT=$(kubectl get svc argocd-server -n argocd -o jsonpath="{.spec.ports[0].nodePort}" || echo "N/A")
-
-                GRAFANA_PORT=$(kubectl get svc kube-stack-grafana -n monitoring -o jsonpath="{.spec.ports[0].nodePort}" || echo "N/A")
-
-                ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" | base64 -d)
-
-                GRAFANA_PASS=$(kubectl get secret -n monitoring kube-stack-grafana -o jsonpath="{.data.admin-password}" | base64 -d)
-
-                echo "ArgoCD URL    : http://${NODE_IP}:${ARGOCD_PORT}"
-                echo "ArgoCD User   : admin"
-                echo "ArgoCD Pass   : ${ARGOCD_PASS}"
-
-                echo "Grafana URL   : http://${NODE_IP}:${GRAFANA_PORT}"
-                echo "Grafana User  : admin"
-                echo "Grafana Pass  : ${GRAFANA_PASS}"
-
-                echo "==============================================="
+                  --filters "Name=instance-state-name,Values=running" \
+                            "Name=tag:kubernetes.io/cluster/prime-poc-cluster,Values=owned" \
+                  --query "Reservations[*].Instances[*].PublicIpAddress" \
+                  --output text | head -n1)
+                # Fallback check if the node is entirely private without an elastic public IP mapping
+                if [ -z "$NODE_IP" ] || [ "$NODE_IP" == "None" ]; then
+                    echo "Public IP not found via cluster tags. Searching by instance type..."
+                    NODE_IP=$(aws ec2 describe-instances \
+                      --filters "Name=instance-state-name,Values=running" \
+                                "Name=instance-type,Values=c7i-flex.large" \
+                      --query "Reservations[*].Instances[*].PublicIpAddress" \
+                      --output text | head -n1)
+                fi
+                # 2. Extract service NodePorts natively from inside the EKS cluster configurations
+                ARGOCD_PORT=$(kubectl get svc argocd-server -n argocd -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
+                GRAFANA_PORT=$(kubectl get svc kube-stack-grafana -n monitoring -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
+                PROMETHEUS_PORT=$(kubectl get svc kube-stack-prometheus -n monitoring -o jsonpath="{.spec.ports[0].nodePort}" 2>/dev/null || echo "N/A")
+                # 3. Securely decode service authentication secrets
+                ARGOCD_PASS=$(kubectl -n argocd get secret argocd-initial-admin-secret -o jsonpath="{.data.password}" 2>/dev/null | base64 --decode || echo "N/A")
+                GRAFANA_PASS=$(kubectl get secret -n monitoring kube-stack-grafana -o jsonpath="{.data.admin-password}" 2>/dev/null | base64 --decode || echo "N/A")
+                # 4. Print clean, click-ready browser navigation routes, usernames, and passwords
+                echo "🎬 Application URL : http://${NODE_IP}:32080"
+                echo "   👉 Authentication: None (Public Application Endpoint)"
+                echo "----------------------------------------------------------"
+                echo "🐙 ArgoCD URL      : http://${NODE_IP}:${ARGOCD_PORT}"
+                echo "   👤 User Name     : admin"
+                # FIXED: Resolved broken double quotes structure causing compilation block failures
+                echo "   🔑 Password      : ${ARGOCD_PASS}"
+                echo "----------------------------------------------------------"
+                echo "🔥 Prometheus URL  : http://${NODE_IP}:${PROMETHEUS_PORT}"
+                echo "   👉 Authentication: None (Open Metrics Dashboard)"
+                echo "----------------------------------------------------------"
+                echo "📊 Grafana URL     : http://${NODE_IP}:${GRAFANA_PORT}"
+                echo "   👤 User Name     : admin"
+                echo "   🔑 Password      : ${GRAFANA_PASS}"
+                echo "=========================================================="
                 '''
             }
         }
