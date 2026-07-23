@@ -26,27 +26,6 @@ pipeline {
             }
         }
 
-        stage('Install Dependencies') {
-            steps {
-                sh '''
-                sudo apt-get update -y
-
-                if ! command -v kubectl >/dev/null 2>&1; then
-                    curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl"
-                    chmod +x kubectl
-                    sudo mv kubectl /usr/local/bin/
-                fi
-
-                if ! command -v helm >/dev/null 2>&1; then
-                    curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-                fi
-
-                kubectl version --client
-                helm version
-                '''
-            }
-        }
-
         stage('Establish Cluster Access') {
             steps {
                 sh '''
