@@ -51,17 +51,13 @@ pipeline {
             def scannerHome = tool 'sonar-scanner'
 
             withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
-                sh '''
-                '"${SCANNER_HOME}"'
-                '''
                 sh """
                 ${scannerHome}/bin/sonar-scanner \
                 -Dsonar.projectKey=prime-clone \
                 -Dsonar.sources=. \
                 -Dsonar.host.url=http://13.203.42.55:9000 \
                 -Dsonar.token=$SONAR_TOKEN \
-                -Dsonar.exclusions=**/.terraform/**,**/node_modules/**,**/*.min.js,**/dist/**,**/build/**,**/.git/** \
-                -Dsonar.sourceEncoding=UTF-8
+                -Dsonar.exclusions=**/.terraform/**,**/node_modules/**,**/dist/**,**/build/**,**/.git/**
                 """
             }
         }
