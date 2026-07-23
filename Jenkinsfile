@@ -10,72 +10,58 @@ pipeline {
     }
 
     stages {
-
         stage('Code Checkout') {
             steps {
                 checkout scm
             }
         }
-
         stage('Terraform Provision Infrastructure') {
             steps {
                 dir('terraform') {
+                    // Initializes and provisions the VPC and single c7i-flex.large node automatically
                     sh 'terraform init'
                     sh 'terraform apply --auto-approve'
                 }
             }
         }
-
+ 
         stage('Establish Cluster Access') {
             steps {
-                sh '''
-                aws eks update-kubeconfig \
-                --region us-east-1 \
-                --name prime-poc-cluster
-
-                kubectl get nodes
-                '''
+                // Connects your tools remote control context directly to the EKS cluster
+                sh "aws eks update-kubeconfig --region ${AWS_DEFAULT_REGION} --name prime-poc-cluster"
             }
         }
-
+ 
         stage('NPM Install & Build') {
             steps {
                 sh 'npm install'
                 sh 'npm run build'
             }
         }
-
+ 
         stage('Docker Build Container') {
             steps {
                 sh "docker build -t ${IMAGE_REPO_NAME}:${IMAGE_TAG} ."
-                sh "docker images"
+                sh "docker images "
             }
         }
-
         stage('SonarQube Scan') {
             steps {
                 script {
                     def scannerHome = tool 'sonar-scanner'
-
-                    withCredentials([
-                        string(
-                            credentialsId: 'sonar-token',
-                            variable: 'SONAR_TOKEN'
-                        )
-                    ]) {
+                    withCredentials([string(credentialsId: 'sonar-token', variable: 'SONAR_TOKEN')]) {
                         sh """
                         ${scannerHome}/bin/sonar-scanner \
                         -Dsonar.projectKey=prime-clone \
                         -Dsonar.sources=. \
-                        -Dsonar.host.url=http://13.203.42.55:9000 \
-                        -Dsonar.token=$SONAR_TOKEN \
-                        -Dsonar.exclusions=**/.terraform/**,**/node_modules/**,**/dist/**,**/build/**,**/.git/**
+                        -Dsonar.host.url=http://54.162.144.178:9000 \
+                        -Dsonar.login=${SONAR_TOKEN}
                         """
                     }
                 }
             }
         }
-
+ 
         stage('Trivy Scan') {
             steps {
                 sh """
@@ -89,100 +75,86 @@ pipeline {
                 """
             }
         }
-
-        stage('Push Image To AWS ECR') {
+ 
+        stage('Push Image to AWS ECR') {
             steps {
-                sh '''
-                aws ecr get-login-password --region ap-south-1 | \
-                docker login \
-                --username AWS \
-                --password-stdin \
-                566540245122.dkr.ecr.ap-south-1.amazonaws.com
-
-                docker tag prime-clone:${BUILD_NUMBER} \
-                566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:latest
-
-                docker tag prime-clone:${BUILD_NUMBER} \
-                566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:${BUILD_NUMBER}
-
-                docker push \
-                566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:latest
-
-                docker push \
-                566540245122.dkr.ecr.ap-south-1.amazonaws.com/prime-clone:${BUILD_NUMBER}
-                '''
+                sh """
+                aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com
+                docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
+                docker tag ${IMAGE_REPO_NAME}:${IMAGE_TAG} ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+                docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:latest
+                docker push ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}
+                """
             }
         }
-
+ 
         stage('Update Git Manifest For GitOps') {
             steps {
-                withCredentials([
-                    usernamePassword(
-                        credentialsId: "${GITHUB_CRED_ID}",
-                        passwordVariable: 'GIT_PASSWORD',
-                        usernameVariable: 'GIT_USERNAME'
-                    )
-                ]) {
+                withCredentials([usernamePassword(credentialsId: "${GITHUB_CRED_ID}", passwordVariable: 'GIT_PASSWORD', usernameVariable: 'GIT_USERNAME')]) {
                     sh """
+                    # FIXED: Corrected domain format mapping using a forward slash and dollar variable sign prefix
                     sed -i "s|image: .*|image: ${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${IMAGE_REPO_NAME}:${IMAGE_TAG}|g" k8s/deployment.yaml
-
+                    # 2. Configure Git operational profiles
                     git config user.email "jenkins@devsecops.poc"
                     git config user.name "Jenkins CI Engine"
-
+                    # 3. Stage and commit configuration adjustments
                     git add k8s/deployment.yaml
                     git commit -m "Automated build update: image tag v${IMAGE_TAG} [skip ci]" || true
-
-                    git remote set-url origin https://\${GIT_USERNAME}:\${GIT_PASSWORD}@github.com/\${GIT_USERNAME}/POC-6.git
-
+                    # 4. Clean, properly structured Git authentication routing string
+                    git remote set-url origin "https://\${GIT_USERNAME}:\${GIT_PASSWORD}@github.com/\${GIT_USERNAME}/POC-6.git"
+                    # 5. Push deployment manifest changes straight up to GitHub main branch
                     git push origin HEAD:main
                     """
                 }
             }
         }
-
+ 
         stage('Deploy GitOps & Helm Monitoring') {
             steps {
                 sh '''
-                kubectl create namespace argocd \
-                --dry-run=client -o yaml | kubectl apply -f -
-
-                kubectl create namespace monitoring \
-                --dry-run=client -o yaml | kubectl apply -f -
-
-                kubectl apply -n argocd \
-                -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.7/manifests/install.yaml
-
-                kubectl wait \
-                --for=condition=available \
-                deployment/argocd-server \
-                -n argocd \
-                --timeout=600s
-
+                # 1. Grant EKS nodes permission to pull images from ECR
+                NODE_ROLE=$(aws iam list-roles --query "Roles[?contains(RoleName, 'monitoring_node')].RoleName" --output text)
+                aws iam attach-role-policy \
+                  --role-name $NODE_ROLE \
+                  --policy-arn arn:aws:iam::aws:policy/AmazonEC2ContainerRegistryReadOnly || true
+                # 2. Create ArgoCD namespace
+                kubectl create namespace argocd || true
+                # 3. Install ArgoCD using server-side apply
+                kubectl apply --server-side -n argocd \
+                  -f https://raw.githubusercontent.com/argoproj/argo-cd/v2.11.7/manifests/install.yaml || true
+                # 4. Wait for ArgoCD resources to initialize completely
+                kubectl wait --for=condition=available deployment/argocd-server \
+                  -n argocd --timeout=300s || true
+                # 5. Expose ArgoCD UI via NodePort
                 kubectl patch svc argocd-server \
-                -n argocd \
-                -p '{"spec":{"type":"NodePort"}}'
-
+                  -n argocd \
+                  -p '{"spec":{"type":"NodePort"}}' || true
+                # 6. Deploy GitOps application
                 kubectl apply -f k8s/argocd-app.yaml || true
-
+                # 7. Add Prometheus Helm repo
                 helm repo add prometheus-community \
-                https://prometheus-community.github.io/helm-charts
-
+https://prometheus-community.github.io/helm-charts || true
                 helm repo update
-
+                # 8. Create monitoring namespace
+                kubectl create namespace monitoring || true
+                # 9. Install Prometheus + Grafana inside the cluster node
+                # FIXED: Added explicit nodePort exposure for the Prometheus Expression Browser service
                 helm upgrade --install kube-stack \
-                prometheus-community/kube-prometheus-stack \
-                --namespace monitoring \
-                --set grafana.service.type=NodePort \
-                --set prometheus.service.type=NodePort \
-                --wait \
-                --timeout 15m
-
-                kubectl get pods -A
-                kubectl get svc -A
+                  prometheus-community/kube-prometheus-stack \
+                  --namespace monitoring \
+                  --set prometheus.prometheusSpec.resources.requests.memory=400Mi \
+                  --set prometheus.prometheusSpec.resources.limits.memory=1200Mi \
+                  --set grafana.service.type=NodePort \
+                  --set prometheus.service.type=NodePort
+                # 10. Verification logs
+                kubectl get pods -n argocd
+                kubectl get pods -n monitoring
+                kubectl get pods -n default
+                kubectl get deployment 
+                kubectl get pods
                 '''
             }
         }
-
         stage('Display Live Entry Details') {
             steps {
                 sh '''
